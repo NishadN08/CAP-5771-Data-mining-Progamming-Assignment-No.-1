@@ -19,110 +19,69 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import (
     cross_validate,
     KFold,
+    ShuffleSplit
 )
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix
+import utils as u
 
 
-# 1-B
-def scale_data(X_bi=NDArray[np.floating]):
-    # Check if all elements are floating-point numbers and within the range [0, 1]
-    if not issubclass(X_bi.dtype.type, np.floating) or (X_bi < 0).any() or (X_bi > 1).any():
-        return False
-
-    return True
+# 1B: checking for X
+def scalex(x_check=NDArray[np.floating]):
+    # checking if all elements are floats and within the range of [0, 1]:
+    return issubclass(x_check.dtype.type, np.floating) and not ((x_check < 0).any() or (x_check > 1).any())
 
 
-# 1-B
-def scale_data_1(y_bi=NDArray[np.int32]):
-    # Check if the elements in y are integers or not
-    if not issubclass(y_bi.dtype.type, np.int32):
-        return False
-
-    return True
+# 1B: checking for Y
+def scaley(y_check: NDArray[np.integer]):
+    # checking if all the elements in y are integers
+    return issubclass(y_check.dtype.type, np.integer)
 
 
-def print_cv_result_dict_test(cv_dict: Dict):
-    for key, array in cv_dict.items():
-        if key not in ['fit_time', 'score_time']:
-            print(f"mean_{key}: {array.mean()}, std_{key}: {array.std()}")
+def print_cv_result_dict_1(cv_dict):
+    # filtering out the keys where we don't calculate mean and std
+    filtered_keys = [k for k in cv_dict if k not in ['fit_time', 'score_time']]
+
+    # Iterate over the filtered keys and print the mean and std for the arrays
+    for key in filtered_keys:
+        mean_value = cv_dict[key].mean()
+        std_value = cv_dict[key].std()
+        print(f"mean_{key}: {mean_value}, std_{key}: {std_value}")
 
 
-def load_mnist_dataset(
-        nb_samples=None,
-) -> tuple[NDArray[np.floating], NDArray[np.int32]]:
-    """
-    Load the MNIST dataset.
-
-    nb_samples: number of samples to save. Useful for code testing.
-    The homework requires you to use the full dataset.
-
-    Returns:
-        X, y
-        #X_train, y_train, X_test, y_test
-    """
-
-    try:
-        # Are the datasets already loaded?
-        print("... Is MNIST dataset local?")
-        X: NDArray[np.floating] = np.load("mnist_X.npy")
-        y: NDArray[np.int32] = np.load("mnist_y.npy", allow_pickle=True)
-    except Exception as e:
-        # Download the datasets
-        print(f"load_mnist_dataset, exception {e}, Download file")
-        X, y = datasets.fetch_openml(
-            "mnist_784", version=1, return_X_y=True, as_frame=False
-        )
-        X = X.astype(float)
-        y = y.astype(int)
-
-    y = y.astype(np.int32)
-    X: NDArray[np.floating] = X
-    y: NDArray[np.int32] = y
-
-    if nb_samples is not None and nb_samples < X.shape[0]:
-        X = X[0:nb_samples, :]
-        y = y[0:nb_samples]
-
-    print("X.shape: ", X.shape)
-    print("y.shape: ", y.shape)
-    np.save("mnist_X.npy", X)
-    np.save("mnist_y.npy", y)
-    return X, y
+def extract_scores(cv_results: Dict[str, np.ndarray]) -> Dict[str, float]:
+    return {
+        'mean_fit_time': cv_results['fit_time'].mean(),
+        'std_fit_time': cv_results['fit_time'].std(),
+        'mean_accuracy': cv_results['test_score'].mean(),
+        'std_accuracy': cv_results['test_score'].std()
+    }
 
 
-def prepare_custom_data(ntrain, ntest, normalize: bool = True):
-    # Check in case the data is already on the computer.
-    X, y = load_mnist_dataset()
+def filter_imbal_7_9s(X, y):
+    indices_of_7_and_9 = (y == 7) | (y == 9)
+    X_filtered = X[indices_of_7_and_9]
+    y_filtered = y[indices_of_7_and_9]
 
-    # won't work well unless X is greater or equal to zero
-    if normalize:
-        X = X / X.max()
+    # cnverting 7 to 0 and 9 to 1
+    y_binary = np.where(y_filtered == 7, 0, 1)
 
-    y = y.astype(np.int32)
-    Xtrain = X[0:ntrain, :]
-    ytrain = y[0:ntrain]
-    Xtest = X[ntrain:ntrain + ntest]
-    ytest = y[ntrain:ntrain + ntest]
-    return Xtrain, ytrain, Xtest, ytest
+    # Identify indices for class 9 (now labeled as 1)
+    indices_of_class_9 = np.where(y_binary == 1)[0]
 
+    # number of class 9 instances
+    number_to_remove = int(len(indices_of_class_9) * 0.9)
 
-def filter_imbalanced_7_9s(X, y):
-    # Filter out only 7s and 9s
-    seven_nine_idx = (y == 7) | (y == 9)
-    X_binary = X[seven_nine_idx]
-    y_binary = y[seven_nine_idx]
+    np.random.shuffle(indices_of_class_9)
 
-    # Convert 7s to 0s and 9s to 1s
-    y_binary = np.where(y_binary == 7, 0, 1)
+    # indices to remove
+    indices_to_remove = indices_of_class_9[:number_to_remove]
 
-    # Remove 90% of 9s
-    nines_idx = np.where(y_binary == 1)[0]
-    remove_n = int(len(nines_idx) * 0.9)  # 90% to remove
-    np.random.shuffle(nines_idx)
-    remove_idx = nines_idx[:remove_n]
+    # indices to keep
+    indices_to_keep = np.setdiff1d(np.arange(len(X_filtered)), indices_to_remove)
 
-    # Keep only the desired indices
-    keep_idx = np.setdiff1d(np.arange(len(X_binary)), remove_idx)
-    X_imbalanced = X_binary[keep_idx]
-    y_imbalanced = y_binary[keep_idx]
+    # imbalanced data
+    X_imbal = X_filtered[indices_to_keep]
+    y_imbal = y_binary[indices_to_keep]
 
-    return X_imbalanced, y_imbalanced
+    return X_imbal, y_imbal
