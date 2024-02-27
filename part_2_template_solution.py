@@ -199,8 +199,8 @@ class Section2:
                 "mean_cv_accuracy_F": mean_cv_accuracy_F,
                 "clf": clf_F,
                 "cv": cv_F,
-                "conf_mat_train": conf_mat_train.tolist(),
-                "conf_mat_test": conf_mat_test.tolist(),
+                "conf_mat_train": conf_mat_train,
+                "conf_mat_test": conf_mat_test,
             }
 
             answer[ntrain] = {
